@@ -1,77 +1,90 @@
-  name: Release
+name: Release
 
-  'on':
-    repository_dispatch:
-      types: [build-release]
-    workflow_dispatch:
+on:
+  repository_dispatch:
+    types: [build-release]
+  workflow_dispatch:
 
-  jobs:
-    publish-tauri:
-      permissions:
-        contents: write
-      strategy:
-        fail-fast: false
-        matrix:
-          include:
-            - platform: windows-latest
-              args: ''
-            - platform: ubuntu-22.04
-              args: ''
-            - platform: macos-latest
-              args: '--target aarch64-apple-darwin'
-            - platform: macos-latest
-              args: '--target x86_64-apple-darwin'
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ''
+            target: ''
+          - platform: ubuntu-22.04
+            args: ''
+            target: ''
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            target: 'aarch64-apple-darwin'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            target: 'x86_64-apple-darwin'
 
-      runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
 
-      steps:
-        - uses: actions/checkout@v4
-          with:
-            repository: Miguelfigrs/Equinox_System
-            token: ${{ secrets.SOURCE_REPO_TOKEN }}
-            ref: ${{ github.event.client_payload.ref || 'master' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: Miguelfigrs/Equinox_System
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ github.event.client_payload.ref || 'master' }}
 
-        - name: Setup Node
-          uses: actions/setup-node@v4
-          with:
-            node-version: lts/*
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-        - name: Install pnpm
-          uses: pnpm/action-setup@v4
-          with:
-            version: 9
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+          cache-dependency-path: 'Equinox.UI/pnpm-lock.yaml'
 
-        - name: Install Rust stable
-          uses: dtolnay/rust-toolchain@stable
-          with:
-            targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || ''}}
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-        - name: Install Linux dependencies
-          if: matrix.platform == 'ubuntu-22.04'
-          run: |
-            sudo apt-get update
-            sudo apt-get install -y \
-              libwebkit2gtk-4.1-dev \
-              libappindicator3-dev \
-              librsvg2-dev \
-              patchelf
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./Equinox.UI/src-tauri -> target"
 
-        - name: Install frontend dependencies
-          working-directory: Equinox.UI
-          run: pnpm install
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
-        - name: Build and publish
-          uses: tauri-apps/tauri-action@v0
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-            TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          with:
-            projectPath: Equinox.UI
-            tagName: v__VERSION__
-            releaseName: Equinox System v__VERSION__
-            releaseBody: |
-              ## O que há de novo nesta versão
-              Veja os assets abaixo para baixar e instalar.
-            releaseDraft: true
-            prerelease: false
+      - name: Install frontend dependencies
+        working-directory: Equinox.UI
+        run: pnpm install
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: Equinox.UI
+          tagName: v__VERSION__
+          releaseName: "Equinox System v__VERSION__"
+          releaseBody: |
+            ## O que há de novo nesta versão
+            Confira os arquivos abaixo para baixar a versão compatível com seu sistema operacional.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
