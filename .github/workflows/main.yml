@@ -1,6 +1,6 @@
-name: Release
+  name: Release
 
-'on':
+  'on':
     repository_dispatch:
       types: [build-release]
     workflow_dispatch:
@@ -44,8 +44,7 @@ name: Release
         - name: Install Rust stable
           uses: dtolnay/rust-toolchain@stable
           with:
-            targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || ''
-   }}
+            targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || ''}}
 
         - name: Install Linux dependencies
           if: matrix.platform == 'ubuntu-22.04'
