@@ -1,6 +1,6 @@
  name: Release
 
-  on:
+'on':
     repository_dispatch:
       types: [build-release]
     workflow_dispatch:
