@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish-tauri:
+  publish-desktop:
     permissions:
       contents: write
     strategy:
@@ -15,77 +15,131 @@ jobs:
         include:
           - platform: windows-latest
             args: ''
-            target: ''
           - platform: ubuntu-22.04
             args: ''
-            target: ''
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
-            target: 'aarch64-apple-darwin'
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
-            target: 'x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: Miguelfigrs/Equinox_System
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
           ref: ${{ github.event.client_payload.ref || 'master' }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: 'pnpm'
-          cache-dependency-path: 'Equinox.UI/pnpm-lock.yaml'
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./Equinox.UI/src-tauri -> target"
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend dependencies
         working-directory: Equinox.UI
         run: pnpm install
 
       - name: Build and publish
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         with:
           projectPath: Equinox.UI
           tagName: v__VERSION__
-          releaseName: "Equinox System v__VERSION__"
+          releaseName: Equinox System v__VERSION__
           releaseBody: |
             ## O que há de novo nesta versão
-            Confira os arquivos abaixo para baixar a versão compatível com seu sistema operacional.
+            Veja os assets abaixo para baixar e instalar.
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+
+  publish-android:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    needs: publish-desktop
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Miguelfigrs/Equinox_System
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ github.event.client_payload.ref || 'master' }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install frontend dependencies
+        working-directory: Equinox.UI
+        run: pnpm install
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
+
+      - name: Build Android APK
+        working-directory: Equinox.UI
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: pnpm tauri android build --apk
+
+      - name: Sign APK
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks $RUNNER_TEMP/equinox-release.keystore \
+            --ks-key-alias equinox \
+            --ks-pass pass:equinox2025 \
+            --key-pass pass:equinox2025 \
+            --out Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/equinox-system-release.apk \
+            Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.client_payload.version || '0.1.12' }}
+          files: Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/equinox-system-release.apk
+          draft: true
