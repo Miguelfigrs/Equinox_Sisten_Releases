@@ -117,7 +117,7 @@ jobs:
 
       - name: Decode keystore
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | tr -d ' \n\r' | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
 
       - name: Build Android APK
         working-directory: Equinox.UI
