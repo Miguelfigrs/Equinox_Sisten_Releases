@@ -169,6 +169,8 @@ jobs:
     steps:
       - name: Generate and upload latest.json
         uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -198,17 +200,21 @@ jobs:
             console.log('=== ASSETS ===');
             assets.forEach(a => console.log(a.name));
 
+            const findAsset = (regex) => assets.find(a => regex.test(a.name));
+
             const findUrl = (regex) => {
-              const a = assets.find(a => regex.test(a.name));
+              const a = findAsset(regex);
               return a ? a.browser_download_url : null;
             };
 
             const getSig = async (regex) => {
-              const a = assets.find(a => regex.test(a.name));
+              const a = findAsset(regex);
               if (!a) return '';
-              const resp = await fetch(a.browser_download_url);
-              const text = await resp.text();
-              return text === 'Not Found' ? '' : text.trim();
+              const { execSync } = require('child_process');
+              const result = execSync(
+                `curl -sL -H "Authorization: token ${process.env.GITHUB_TOKEN}" "${a.browser_download_url}"`
+              ).toString();
+              return result === 'Not Found' ? '' : result.trim();
             };
 
             const platforms = {};
@@ -228,6 +234,9 @@ jobs:
             const macX64Url = findUrl(/x64\.app\.tar\.gz$/);
             const macX64Sig = await getSig(/x64\.app\.tar\.gz\.sig$/);
             if (macX64Url) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig };
+
+            const androidUrl = findUrl(/equinox-system-release\.apk$/);
+            if (androidUrl) platforms['android'] = { url: androidUrl, signature: '' };
 
             console.log('Platforms found:', Object.keys(platforms));
 
