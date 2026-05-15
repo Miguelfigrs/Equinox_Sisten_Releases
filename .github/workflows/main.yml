@@ -44,8 +44,7 @@
         - name: Install Rust stable
           uses: dtolnay/rust-toolchain@stable
           with:
-            targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || ''
-   }}
+            targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || ''}}
 
         - name: Install Linux dependencies
           if: matrix.platform == 'ubuntu-22.04'
@@ -106,8 +105,7 @@
           uses: android-actions/setup-android@v3
 
         - name: Install Android targets
-          run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
-  x86_64-linux-android
+          run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-androidx86_64-linux-android
 
         - name: Install Rust stable
           uses: dtolnay/rust-toolchain@stable
@@ -128,8 +126,7 @@
 
         - name: Decode keystore
           run: |
-            echo "${{ secrets.ANDROID_KEYSTORE }}" | tr -d ' \n\r' | base64 --decode >
-  $RUNNER_TEMP/equinox-release.keystore
+            echo "${{ secrets.ANDROID_KEYSTORE }}" | tr -d ' \n\r' | base64 --decode >$RUNNER_TEMP/equinox-release.keystore
 
         - name: Build Android APK
           working-directory: Equinox.UI
@@ -145,9 +142,7 @@
               --ks-key-alias equinox \
               --ks-pass pass:${{ secrets.ANDROID_STORE_PASSWORD }} \
               --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
-              --out equinox-system-release.apk \
-
-  Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+              --out equinox-system-release.apk \Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
 
         - name: Get release tag
           id: get_tag
@@ -236,13 +231,11 @@
 
               const macAarch64Url = findUrl(/aarch64\.app\.tar\.gz$/);
               const macAarch64Sig = await getSig(/aarch64\.app\.tar\.gz\.sig$/);
-              if (macAarch64Url && macAarch64Sig) platforms['darwin-aarch64'] = { url: macAarch64Url,
-  signature: macAarch64Sig };
+              if (macAarch64Url && macAarch64Sig) platforms['darwin-aarch64'] = { url: macAarch64Url,signature: macAarch64Sig };
 
               const macX64Url = findUrl(/x64\.app\.tar\.gz$/);
               const macX64Sig = await getSig(/x64\.app\.tar\.gz\.sig$/);
-              if (macX64Url && macX64Sig) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig
-  };
+              if (macX64Url && macX64Sig) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig};
 
               console.log('Platforms found:', Object.keys(platforms));
 
