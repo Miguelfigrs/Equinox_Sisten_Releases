@@ -73,109 +73,63 @@ jobs:
           releaseDraft: true
           prerelease: false
 
-      create-latest-json:
-      runs-on: ubuntu-latest
-      needs: publish-desktop
-      permissions:
-        contents: write
-      env:
-        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      steps:
-    
-        - name: Generate and upload latest.json
-          uses: actions/github-script@v7
-          with:
-            github-token: ${{ secrets.GITHUB_TOKEN }}
-            script: |
-              const releases = await github.rest.repos.listReleases({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 5
-              });
-
-              const release = releases.data.find(r => r.draft) || releases.data[0];
-              const tag = release.tag_name;
-              const version = tag.replace(/^v/, '');
-
-              const assetsResp = await github.rest.repos.listReleaseAssets({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.id,
-                per_page: 100
-              });
-              const assets = assetsResp.data;
-
-              console.log('=== TODOS OS ASSETS DA RELEASE ===');
-              assets.forEach(a => console.log(a.name));
-              console.log('==================================');
-
-  publish-android:
+  # ✅ Fixed: now a top-level job, not nested inside publish-desktop
+  create-latest-json:
+    runs-on: ubuntu-latest
+    needs: [publish-desktop, publish-android]
     permissions:
       contents: write
-    runs-on: ubuntu-22.04
-    needs: publish-desktop
-
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Generate and upload latest.json
+        uses: actions/github-script@v7
         with:
-          repository: Miguelfigrs/Equinox_System
-          token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ github.event.client_payload.ref || 'master' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 5
+            });
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
+            const release = releases.data.find(r => r.draft) || releases.data[0];
+            const tag = release.tag_name;
+            const version = tag.replace(/^v/, '');
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+            const assetsResp = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              per_page: 100
+            });
+            const assets = assetsResp.data;
 
-      - name: Install Android targets
-        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+            console.log('=== TODOS OS ASSETS DA RELEASE ===');
+            assets.forEach(a => console.log(a.name));
+            console.log('==================================');
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+            // ✅ Build and upload latest.json (was missing entirely)
+            const findAsset = (pattern) => {
+              const a = assets.find(a => pattern.test(a.name));
+              return a ? a.browser_download_url : null;
+            };
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
+            const findSig = (pattern) => {
+              const a = assets.find(a => pattern.test(a.name));
+              return a ? await fetch(a.browser_download_url).then(r => r.text()) : '';
+            };
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Install frontend dependencies
-        working-directory: Equinox.UI
-        run: pnpm install
-
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
-
-      - name: Build Android APK
-        working-directory: Equinox.UI
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-        run: pnpm tauri android build --apk
-
-      - name: Sign APK
-        run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --ks $RUNNER_TEMP/equinox-release.keystore \
-            --ks-key-alias equinox \
-            --ks-pass pass:equinox2025 \
-            --key-pass pass:equinox2025 \
-            --out equinox-system-release.apk \
-            Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
-
-      - name: Upload APK to release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.1.13
-          files: equinox-system-release.apk
-          draft: true
+            const latestJson = {
+              version,
+              notes: release.body || '',
+              pub_date: release.published_at || new Date().toISOString(),
+              platforms: {
+                'windows-x86_64': {
+                  url: findAsset(/\.msi\.zip$/),
+                  signature: ''
+                },
+                'linux-x86_64': {
+                  url: findAsset(/\.AppImage\.tar\.gz$/),
+                  signature: ''
