@@ -131,7 +131,7 @@ jobs:
           $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
             --ks $RUNNER_TEMP/equinox-release.keystore \
             --ks-key-alias equinox \
-            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --ks-pass pass:${{ secrets.ANDROID_STORE_PASSWORD }} \
             --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
             --out equinox-system-release.apk \
             Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
@@ -163,9 +163,6 @@ jobs:
     needs: [publish-desktop, publish-android]
     permissions:
       contents: write
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - name: Generate and upload latest.json
         uses: actions/github-script@v7
@@ -190,50 +187,49 @@ jobs:
             });
             const assets = assetsResp.data;
 
-            console.log('=== TODOS OS ASSETS DA RELEASE ===');
+            console.log('=== ASSETS ===');
             assets.forEach(a => console.log(a.name));
-            console.log('==================================');
 
-            const findAsset = (pattern) => {
-              const a = assets.find(a => pattern.test(a.name));
+            const findUrl = (regex) => {
+              const a = assets.find(a => regex.test(a.name));
               return a ? a.browser_download_url : null;
             };
 
-            const latestJson = {
-              version,
-              notes: release.body || '',
-              pub_date: release.published_at || new Date().toISOString(),
-              platforms: {
-                'windows-x86_64': {
-                  url: findAsset(/\.msi\.zip$/),
-                  signature: ''
-                },
-                'linux-x86_64': {
-                  url: findAsset(/\.AppImage\.tar\.gz$/),
-                  signature: ''
-                },
-                'darwin-aarch64': {
-                  url: findAsset(/aarch64\.app\.tar\.gz$/),
-                  signature: ''
-                },
-                'darwin-x86_64': {
-                  url: findAsset(/x86_64\.app\.tar\.gz$/),
-                  signature: ''
-                }
-              }
+            const getSig = async (regex) => {
+              const a = assets.find(a => regex.test(a.name));
+              if (!a) return '';
+              const resp = await fetch(a.browser_download_url);
+              return (await resp.text()).trim();
             };
 
-            for (const [platform, data] of Object.entries(latestJson.platforms)) {
-              if (data.url) {
-                const sigAsset = assets.find(a => a.name === assets.find(b => b.browser_download_url === data.url)?.name + '.sig');
-                if (sigAsset) {
-                  const sigResp = await fetch(sigAsset.browser_download_url);
-                  latestJson.platforms[platform].signature = await sigResp.text();
-                }
-              }
-            }
+            const platforms = {};
 
-            const content = JSON.stringify(latestJson, null, 2);
+            const winUrl = findUrl(/nsis\.zip$/);
+            const winSig = await getSig(/nsis\.zip\.sig$/);
+            if (winUrl) platforms['windows-x86_64'] = { url: winUrl, signature: winSig };
+
+            const linuxUrl = findUrl(/AppImage\.tar\.gz$/);
+            const linuxSig = await getSig(/AppImage\.tar\.gz\.sig$/);
+            if (linuxUrl) platforms['linux-x86_64'] = { url: linuxUrl, signature: linuxSig };
+
+            const macAarch64Url = findUrl(/aarch64\.app\.tar\.gz$/);
+            const macAarch64Sig = await getSig(/aarch64\.app\.tar\.gz\.sig$/);
+            if (macAarch64Url) platforms['darwin-aarch64'] = { url: macAarch64Url, signature: macAarch64Sig };
+
+            const macX64Url = findUrl(/x64\.app\.tar\.gz$/);
+            const macX64Sig = await getSig(/x64\.app\.tar\.gz\.sig$/);
+            if (macX64Url) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig };
+
+            console.log('Platforms found:', Object.keys(platforms));
+
+            const content = JSON.stringify({
+              version,
+              notes: "Veja os assets abaixo para baixar e instalar.",
+              pub_date: new Date().toISOString(),
+              platforms
+            }, null, 2);
+
+            console.log('latest.json:', content);
 
             const existing = assets.find(a => a.name === 'latest.json');
             if (existing) {
@@ -253,4 +249,4 @@ jobs:
               headers: { 'content-type': 'application/json' }
             });
 
-            console.log('latest.json uploaded successfully');
+            console.log('latest.json enviado!');
