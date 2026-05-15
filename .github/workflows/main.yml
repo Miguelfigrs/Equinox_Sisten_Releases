@@ -1,297 +1,276 @@
-name: Release
+ name: Release
 
-on:
-  repository_dispatch:
-    types: [build-release]
-  workflow_dispatch:
+  'on':
+    repository_dispatch:
+      types: [build-release]
+    workflow_dispatch:
 
-jobs:
-  publish-desktop:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            args: ''
-          - platform: ubuntu-22.04
-            args: ''
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
+  jobs:
+    publish-desktop:
+      permissions:
+        contents: write
+      strategy:
+        fail-fast: false
+        matrix:
+          include:
+            - platform: windows-latest
+              args: ''
+            - platform: ubuntu-22.04
+              args: ''
+            - platform: macos-latest
+              args: '--target aarch64-apple-darwin'
+            - platform: macos-latest
+              args: '--target x86_64-apple-darwin'
 
-    runs-on: ${{ matrix.platform }}
+      runs-on: ${{ matrix.platform }}
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: Miguelfigrs/Equinox_System
-          token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ github.event.client_payload.ref || 'master' }}
+      steps:
+        - uses: actions/checkout@v4
+          with:
+            repository: Miguelfigrs/Equinox_System
+            token: ${{ secrets.SOURCE_REPO_TOKEN }}
+            ref: ${{ github.event.client_payload.ref || 'master' }}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
+        - name: Setup Node
+          uses: actions/setup-node@v4
+          with:
+            node-version: lts/*
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        - name: Install pnpm
+          uses: pnpm/action-setup@v4
+          with:
+            version: 9
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+        - name: Install Rust stable
+          uses: dtolnay/rust-toolchain@stable
+          with:
+            targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || ''
+   }}
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        - name: Install Linux dependencies
+          if: matrix.platform == 'ubuntu-22.04'
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Install frontend dependencies
-        working-directory: Equinox.UI
-        run: pnpm install
+        - name: Install frontend dependencies
+          working-directory: Equinox.UI
+          run: pnpm install
 
-      - name: Setup signing key
-        shell: bash
-        run: |
-          mkdir -p ~/.tauri
-          printf '%s' "$TAURI_KEY_B64" | base64 -d > ~/.tauri/signing.key
-        env:
-          TAURI_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        - name: Setup signing key
+          shell: bash
+          run: |
+            KEY_PATH="$HOME/.tauri/signing.key"
+            mkdir -p "$HOME/.tauri"
+            printf '%s' "$TAURI_KEY_B64" | base64 -d > "$KEY_PATH"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$KEY_PATH" >> $GITHUB_ENV
+          env:
+            TAURI_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-      - name: Build and publish
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ runner.temp }}/../.tauri/signing.key
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        with:
-          projectPath: Equinox.UI
-          tagName: v__VERSION__
-          releaseName: Equinox System v__VERSION__
-          releaseBody: |
-            ## O que há de novo nesta versão
-            Veja os assets abaixo para baixar e instalar.
-          releaseDraft: true
-          prerelease: false
+        - name: Build and publish
+          uses: tauri-apps/tauri-action@v0
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+            VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          with:
+            projectPath: Equinox.UI
+            tagName: v__VERSION__
+            releaseName: Equinox System v__VERSION__
+            releaseBody: |
+              ## O que há de novo nesta versão
+              Veja os assets abaixo para baixar e instalar.
+            releaseDraft: true
+            prerelease: false
 
-  publish-android:
-    permissions:
-      contents: write
-    runs-on: ubuntu-22.04
-    needs: publish-desktop
+    publish-android:
+      permissions:
+        contents: write
+      runs-on: ubuntu-22.04
+      needs: publish-desktop
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: Miguelfigrs/Equinox_System
-          token: ${{ secrets.SOURCE_REPO_TOKEN }}
-          ref: ${{ github.event.client_payload.ref || 'master' }}
+      steps:
+        - uses: actions/checkout@v4
+          with:
+            repository: Miguelfigrs/Equinox_System
+            token: ${{ secrets.SOURCE_REPO_TOKEN }}
+            ref: ${{ github.event.client_payload.ref || 'master' }}
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
+        - name: Setup Java
+          uses: actions/setup-java@v4
+          with:
+            distribution: temurin
+            java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        - name: Setup Android SDK
+          uses: android-actions/setup-android@v3
 
-      - name: Install Android targets
-        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+        - name: Install Android targets
+          run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
+  x86_64-linux-android
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        - name: Install Rust stable
+          uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
+        - name: Setup Node
+          uses: actions/setup-node@v4
+          with:
+            node-version: lts/*
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        - name: Install pnpm
+          uses: pnpm/action-setup@v4
+          with:
+            version: 9
 
-      - name: Install frontend dependencies
-        working-directory: Equinox.UI
-        run: pnpm install
+        - name: Install frontend dependencies
+          working-directory: Equinox.UI
+          run: pnpm install
 
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | tr -d ' \n\r' | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
+        - name: Decode keystore
+          run: |
+            echo "${{ secrets.ANDROID_KEYSTORE }}" | tr -d ' \n\r' | base64 --decode >
+  $RUNNER_TEMP/equinox-release.keystore
 
-      - name: Build Android APK
-        working-directory: Equinox.UI
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-        run: pnpm tauri android build --apk
+        - name: Build Android APK
+          working-directory: Equinox.UI
+          env:
+            VITE_API_URL: ${{ secrets.VITE_API_URL }}
+            NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          run: pnpm tauri android build --apk
 
-      - name: Sign APK
-        run: |
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --ks $RUNNER_TEMP/equinox-release.keystore \
-            --ks-key-alias equinox \
-            --ks-pass pass:${{ secrets.ANDROID_STORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
-            --out equinox-system-release.apk \
-            Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+        - name: Sign APK
+          run: |
+            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+              --ks $RUNNER_TEMP/equinox-release.keystore \
+              --ks-key-alias equinox \
+              --ks-pass pass:${{ secrets.ANDROID_STORE_PASSWORD }} \
+              --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --out equinox-system-release.apk \
 
-      - name: Get release tag
-        id: get_tag
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          result-encoding: string
-          script: |
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 10
-            });
-            const release = releases.data.find(r => r.draft && !r.tag_name.startsWith('untagged'));
-            if (!release) throw new Error('Nenhum draft válido encontrado');
-            return release.tag_name;
+  Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
 
-      - name: Upload APK to release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.get_tag.outputs.result }}
-          files: equinox-system-release.apk
-          draft: true
-
-  create-latest-json:
-    runs-on: ubuntu-latest
-    needs: [publish-desktop, publish-android]
-    permissions:
-      contents: write
-    steps:
-      - name: Generate and upload latest.json
-        uses: actions/github-script@v7
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            let release = null;
-            for (let i = 0; i < 10; i++) {
-              await new Promise(r => setTimeout(r, 30000));
-
+        - name: Get release tag
+          id: get_tag
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            result-encoding: string
+            script: |
               const releases = await github.rest.repos.listReleases({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 per_page: 10
               });
+              const release = releases.data
+                .filter(r => r.draft)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+              return release ? release.tag_name : 'v0.1.13';
 
-              release = releases.data.find(r => r.draft && !r.tag_name.startsWith('untagged'));
+        - name: Upload APK to release
+          uses: softprops/action-gh-release@v2
+          with:
+            tag_name: ${{ steps.get_tag.outputs.result }}
+            files: equinox-system-release.apk
+            draft: true
 
-              if (release) {
-                console.log(`Release encontrada na tentativa ${i + 1}: ${release.tag_name}`);
-                break;
-              }
-
-              console.log(`Tentativa ${i + 1}: ainda sem draft com tag válida, aguardando...`);
-            }
-
-            if (!release) throw new Error('Release com tag válida não encontrada após 5 minutos');
-
-            const tag = release.tag_name;
-            const version = tag.replace(/^v/, '');
-
-            const assetsResp = await github.rest.repos.listReleaseAssets({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.id,
-              per_page: 100
-            });
-            const assets = assetsResp.data;
-
-            console.log('=== ASSETS ===');
-            assets.forEach(a => console.log(a.name));
-
-            const findAsset = (regex) => assets.find(a => regex.test(a.name));
-
-            const findUrl = (regex) => {
-              const a = findAsset(regex);
-              return a ? a.browser_download_url : null;
-            };
-
-            const getSig = async (regex) => {
-              const a = findAsset(regex);
-              if (!a) return '';
-              const { execSync } = require('child_process');
-              const result = execSync(
-                `curl -sL -H "Authorization: token ${process.env.GITHUB_TOKEN}" "${a.browser_download_url}"`
-              ).toString();
-              return result === 'Not Found' ? '' : result.trim();
-            };
-
-            const platforms = {};
-
-            const winUrl = findUrl(/x64-setup\.exe$/);
-            const winSig = await getSig(/x64-setup\.exe\.sig$/);
-            if (winUrl) platforms['windows-x86_64'] = { url: winUrl, signature: winSig };
-
-            const linuxUrl = findUrl(/amd64\.AppImage$/);
-            const linuxSig = await getSig(/amd64\.AppImage\.sig$/);
-            if (linuxUrl) platforms['linux-x86_64'] = { url: linuxUrl, signature: linuxSig };
-
-            const macAarch64Url = findUrl(/aarch64\.app\.tar\.gz$/);
-            const macAarch64Sig = await getSig(/aarch64\.app\.tar\.gz\.sig$/);
-            if (macAarch64Url) platforms['darwin-aarch64'] = { url: macAarch64Url, signature: macAarch64Sig };
-
-            const macX64Url = findUrl(/x64\.app\.tar\.gz$/);
-            const macX64Sig = await getSig(/x64\.app\.tar\.gz\.sig$/);
-            if (macX64Url) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig };
-
-            const androidUrl = findUrl(/equinox-system-release\.apk$/);
-            if (androidUrl) platforms['android'] = { url: androidUrl, signature: '' };
-
-            console.log('Platforms found:', Object.keys(platforms));
-
-            if (Object.keys(platforms).length === 0) {
-              throw new Error('Nenhuma plataforma encontrada nos assets');
-            }
-
-            const content = JSON.stringify({
-              version,
-              notes: "Veja os assets abaixo para baixar e instalar.",
-              pub_date: new Date().toISOString(),
-              platforms
-            }, null, 2);
-
-            console.log('latest.json:', content);
-
-            const existing = assets.find(a => a.name === 'latest.json');
-            if (existing) {
-              await github.rest.repos.deleteReleaseAsset({
+    create-latest-json:
+      runs-on: ubuntu-latest
+      needs: [publish-desktop, publish-android]
+      permissions:
+        contents: write
+      steps:
+        - name: Generate and upload latest.json
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              const allReleases = await github.rest.repos.listReleases({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                asset_id: existing.id
+                per_page: 20
               });
-            }
 
-            await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.id,
-              name: 'latest.json',
-              data: content,
-              headers: { 'content-type': 'application/json' }
-            });
+              const release = allReleases.data
+                .filter(r => r.draft)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-            await github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.id,
-              draft: false
-            });
+              if (!release) throw new Error('Nenhum draft release encontrado');
 
-            console.log('Release publicada e latest.json enviado!');
+              console.log(`Release: ${release.tag_name} (id: ${release.id})`);
+
+              const tag = release.tag_name;
+              const version = tag.replace(/^v/, '');
+
+              const assetsResp = await github.rest.repos.listReleaseAssets({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                per_page: 100
+              });
+              const assets = assetsResp.data;
+
+              console.log('=== ASSETS ===');
+              assets.forEach(a => console.log(a.name));
+
+              const findUrl = (regex) => {
+                const a = assets.find(a => regex.test(a.name));
+                return a ? a.browser_download_url : null;
+              };
+
+              const getSig = async (regex) => {
+                const a = assets.find(a => regex.test(a.name));
+                if (!a) return '';
+                const resp = await fetch(a.browser_download_url);
+                return (await resp.text()).trim();
+              };
+
+              const platforms = {};
+
+              const winUrl = findUrl(/x64-setup\.exe$/);
+              const winSig = await getSig(/x64-setup\.exe\.sig$/);
+              if (winUrl && winSig) platforms['windows-x86_64'] = { url: winUrl, signature: winSig };
+
+              const linuxUrl = findUrl(/amd64\.AppImage$/);
+              const linuxSig = await getSig(/amd64\.AppImage\.sig$/);
+              if (linuxUrl && linuxSig) platforms['linux-x86_64'] = { url: linuxUrl, signature: linuxSig };
+
+              const macAarch64Url = findUrl(/aarch64\.app\.tar\.gz$/);
+              const macAarch64Sig = await getSig(/aarch64\.app\.tar\.gz\.sig$/);
+              if (macAarch64Url && macAarch64Sig) platforms['darwin-aarch64'] = { url: macAarch64Url,
+  signature: macAarch64Sig };
+
+              const macX64Url = findUrl(/x64\.app\.tar\.gz$/);
+              const macX64Sig = await getSig(/x64\.app\.tar\.gz\.sig$/);
+              if (macX64Url && macX64Sig) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig
+  };
+
+              console.log('Platforms found:', Object.keys(platforms));
+
+              const content = JSON.stringify({
+                version,
+                notes: "Veja os assets abaixo para baixar e instalar.",
+                pub_date: new Date().toISOString(),
+                platforms
+              }, null, 2);
+
+              console.log('latest.json:\n', content);
+
+              const existing = assets.find(a => a.name === 'latest.json');
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: existing.id
+                });
+              }
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                name: 'latest.json',
+                data: content,
+                headers: { 'content-type': 'application/json' }
+              });
+
+              console.log('latest.json enviado com sucesso!');
