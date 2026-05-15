@@ -172,7 +172,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Aguarda 30s para garantir que todos os assets foram uploaded
             await new Promise(r => setTimeout(r, 30000));
 
             const releases = await github.rest.repos.listReleases({
@@ -181,7 +180,6 @@ jobs:
               per_page: 10
             });
 
-            // Pega o draft mais recente que tenha tag definida (não untagged)
             const release = releases.data.find(r => r.draft && !r.tag_name.startsWith('untagged'));
             if (!release) throw new Error('Nenhum draft válido encontrado');
 
@@ -215,12 +213,12 @@ jobs:
 
             const platforms = {};
 
-            const winUrl = findUrl(/nsis\.zip$/);
-            const winSig = await getSig(/nsis\.zip\.sig$/);
+            const winUrl = findUrl(/x64-setup\.exe$/);
+            const winSig = await getSig(/x64-setup\.exe\.sig$/);
             if (winUrl) platforms['windows-x86_64'] = { url: winUrl, signature: winSig };
 
-            const linuxUrl = findUrl(/AppImage\.tar\.gz$/);
-            const linuxSig = await getSig(/AppImage\.tar\.gz\.sig$/);
+            const linuxUrl = findUrl(/amd64\.AppImage$/);
+            const linuxSig = await getSig(/amd64\.AppImage\.sig$/);
             if (linuxUrl) platforms['linux-x86_64'] = { url: linuxUrl, signature: linuxSig };
 
             const macAarch64Url = findUrl(/aarch64\.app\.tar\.gz$/);
@@ -234,7 +232,7 @@ jobs:
             console.log('Platforms found:', Object.keys(platforms));
 
             if (Object.keys(platforms).length === 0) {
-              throw new Error('Nenhuma plataforma encontrada nos assets — verifique se createUpdaterArtifacts está ativo');
+              throw new Error('Nenhuma plataforma encontrada nos assets');
             }
 
             const content = JSON.stringify({
