@@ -73,7 +73,91 @@ jobs:
           releaseDraft: true
           prerelease: false
 
-  # ✅ Fixed: now a top-level job, not nested inside publish-desktop
+  publish-android:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    needs: publish-desktop
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Miguelfigrs/Equinox_System
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ github.event.client_payload.ref || 'master' }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install frontend dependencies
+        working-directory: Equinox.UI
+        run: pnpm install
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
+
+      - name: Build Android APK
+        working-directory: Equinox.UI
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: pnpm tauri android build --apk
+
+      - name: Sign APK
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks $RUNNER_TEMP/equinox-release.keystore \
+            --ks-key-alias equinox \
+            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+            --out equinox-system-release.apk \
+            Equinox.UI/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+
+      - name: Get release tag
+        id: get_tag
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: string
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 5
+            });
+            const release = releases.data.find(r => r.draft) || releases.data[0];
+            return release.tag_name;
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_tag.outputs.result }}
+          files: equinox-system-release.apk
+          draft: true
+
   create-latest-json:
     runs-on: ubuntu-latest
     needs: [publish-desktop, publish-android]
@@ -110,15 +194,9 @@ jobs:
             assets.forEach(a => console.log(a.name));
             console.log('==================================');
 
-            // ✅ Build and upload latest.json (was missing entirely)
             const findAsset = (pattern) => {
               const a = assets.find(a => pattern.test(a.name));
               return a ? a.browser_download_url : null;
-            };
-
-            const findSig = (pattern) => {
-              const a = assets.find(a => pattern.test(a.name));
-              return a ? await fetch(a.browser_download_url).then(r => r.text()) : '';
             };
 
             const latestJson = {
@@ -133,3 +211,46 @@ jobs:
                 'linux-x86_64': {
                   url: findAsset(/\.AppImage\.tar\.gz$/),
                   signature: ''
+                },
+                'darwin-aarch64': {
+                  url: findAsset(/aarch64\.app\.tar\.gz$/),
+                  signature: ''
+                },
+                'darwin-x86_64': {
+                  url: findAsset(/x86_64\.app\.tar\.gz$/),
+                  signature: ''
+                }
+              }
+            };
+
+            for (const [platform, data] of Object.entries(latestJson.platforms)) {
+              if (data.url) {
+                const sigAsset = assets.find(a => a.name === assets.find(b => b.browser_download_url === data.url)?.name + '.sig');
+                if (sigAsset) {
+                  const sigResp = await fetch(sigAsset.browser_download_url);
+                  latestJson.platforms[platform].signature = await sigResp.text();
+                }
+              }
+            }
+
+            const content = JSON.stringify(latestJson, null, 2);
+
+            const existing = assets.find(a => a.name === 'latest.json');
+            if (existing) {
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: existing.id
+              });
+            }
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              name: 'latest.json',
+              data: content,
+              headers: { 'content-type': 'application/json' }
+            });
+
+            console.log('latest.json uploaded successfully');
