@@ -56,20 +56,13 @@ jobs:
         working-directory: Equinox.UI
         run: pnpm install
 
-      - name: Setup signing key
-        shell: bash
-        run: |
-          DECODED=$(echo "$TAURI_KEY_B64" | tr -d ' \t\n\r' | base64 -d)
-          echo "TAURI_SIGNING_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-          echo "$DECODED" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-        env:
-          TAURI_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
+      # O secret TAURI_SIGNING_PRIVATE_KEY deve conter o texto puro da chave
+      # minisign (começa com "untrusted comment: ..."), SEM base64.
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         with:
@@ -104,7 +97,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # CORREÇÃO: targets na mesma linha (sem quebra de linha sem backslash)
       - name: Install Android targets
         run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
@@ -162,7 +154,6 @@ jobs:
               .filter(r => r.draft)
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-            // CORREÇÃO: lança erro em vez de usar tag hardcoded como fallback
             if (!release) throw new Error('Nenhum draft release encontrado para upload do APK');
             return release.tag_name;
 
@@ -173,7 +164,6 @@ jobs:
           files: equinox-system-release.apk
           draft: true
 
-      # CORREÇÃO: limpa o keystore após o build
       - name: Cleanup keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/equinox-release.keystore"
@@ -224,8 +214,6 @@ jobs:
               return a ? a.browser_download_url : null;
             };
 
-            // CORREÇÃO: usa a API autenticada do GitHub para baixar .sig
-            // em vez de fetch() direto (que falha em draft releases)
             const getSig = async (regex) => {
               const a = findAsset(regex);
               if (!a) return '';
@@ -235,7 +223,6 @@ jobs:
                 asset_id: a.id,
                 headers: { Accept: 'application/octet-stream' }
               });
-              // O Octokit retorna o conteúdo em resp.data para assets de texto
               return typeof resp.data === 'string' ? resp.data.trim() : Buffer.from(resp.data).toString('utf8').trim();
             };
 
@@ -259,12 +246,9 @@ jobs:
 
             console.log('Platforms found:', Object.keys(platforms));
 
-            // CORREÇÃO: valida que todas as plataformas desktop foram encontradas
             const expectedPlatforms = ['windows-x86_64', 'linux-x86_64', 'darwin-aarch64', 'darwin-x86_64'];
             const missingPlatforms = expectedPlatforms.filter(p => !platforms[p]);
             if (missingPlatforms.length > 0) {
-              console.warn(`AVISO: Plataformas ausentes no latest.json: ${missingPlatforms.join(', ')}`);
-              // Lança erro para evitar publicar um latest.json incompleto
               throw new Error(`Não foi possível gerar latest.json: faltam assets para ${missingPlatforms.join(', ')}`);
             }
 
