@@ -228,28 +228,35 @@ jobs:
 
             const platforms = {};
 
-            const winUrl     = findUrl(/x64-setup\.exe$/);
-            const winSig     = await getSig(/x64-setup\.exe\.sig$/);
+            const winUrl = findUrl(/x64-setup\.exe$/);
+            const winSig = await getSig(/x64-setup\.exe\.sig$/);
             if (winUrl && winSig) platforms['windows-x86_64'] = { url: winUrl, signature: winSig };
 
-            const linuxUrl   = findUrl(/amd64\.AppImage$/);
-            const linuxSig   = await getSig(/amd64\.AppImage\.sig$/);
+            const linuxUrl = findUrl(/amd64\.AppImage$/);
+            const linuxSig = await getSig(/amd64\.AppImage\.sig$/);
             if (linuxUrl && linuxSig) platforms['linux-x86_64'] = { url: linuxUrl, signature: linuxSig };
 
             const macAarch64Url = findUrl(/aarch64\.app\.tar\.gz$/);
             const macAarch64Sig = await getSig(/aarch64\.app\.tar\.gz\.sig$/);
             if (macAarch64Url && macAarch64Sig) platforms['darwin-aarch64'] = { url: macAarch64Url, signature: macAarch64Sig };
 
-            const macX64Url  = findUrl(/x64\.app\.tar\.gz$/);
-            const macX64Sig  = await getSig(/x64\.app\.tar\.gz\.sig$/);
+            // Tenta tanto "x64" quanto "x86_64" pois o tauri-action pode usar qualquer um
+            const macX64Url = findUrl(/x64\.app\.tar\.gz$/) || findUrl(/x86_64\.app\.tar\.gz$/);
+            const macX64Sig = await getSig(/x64\.app\.tar\.gz\.sig$/) || await getSig(/x86_64\.app\.tar\.gz\.sig$/);
             if (macX64Url && macX64Sig) platforms['darwin-x86_64'] = { url: macX64Url, signature: macX64Sig };
 
             console.log('Platforms found:', Object.keys(platforms));
 
+            // Loga aviso para plataformas ausentes mas não bloqueia o upload,
+            // pois builds individuais podem falhar sem derrubar toda a release.
             const expectedPlatforms = ['windows-x86_64', 'linux-x86_64', 'darwin-aarch64', 'darwin-x86_64'];
             const missingPlatforms = expectedPlatforms.filter(p => !platforms[p]);
             if (missingPlatforms.length > 0) {
-              throw new Error(`Não foi possível gerar latest.json: faltam assets para ${missingPlatforms.join(', ')}`);
+              console.warn(`AVISO: Plataformas ausentes no latest.json: ${missingPlatforms.join(', ')}`);
+            }
+
+            if (Object.keys(platforms).length === 0) {
+              throw new Error('Nenhuma plataforma encontrada — abortando para não publicar latest.json vazio.');
             }
 
             const content = JSON.stringify({
