@@ -59,9 +59,10 @@ jobs:
       - name: Setup signing key
         shell: bash
         run: |
-          KEY_FILE="$RUNNER_TEMP/signing.key"
-          echo "$TAURI_KEY_B64" | tr -d ' \t\n\r' | base64 -d > "$KEY_FILE"
-          echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_FILE" >> $GITHUB_ENV
+          DECODED=$(echo "$TAURI_KEY_B64" | tr -d ' \t\n\r' | base64 -d)
+          echo "TAURI_SIGNING_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          echo "$DECODED" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
         env:
           TAURI_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
@@ -80,12 +81,6 @@ jobs:
             Veja os assets abaixo para baixar e instalar.
           releaseDraft: true
           prerelease: false
-
-      # CORREÇÃO: limpa a chave de assinatura após o build
-      - name: Cleanup signing key
-        if: always()
-        shell: bash
-        run: rm -f "$RUNNER_TEMP/signing.key"
 
   publish-android:
     permissions:
