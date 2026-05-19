@@ -211,7 +211,12 @@ jobs:
 
             const findUrl = (regex) => {
               const a = findAsset(regex);
-              return a ? a.browser_download_url : null;
+              if (!a) return null;
+              let url = a.browser_download_url;
+              if (url.includes('/download/untagged-')) {
+                url = url.replace(/\/download\/untagged-[^\/]+/, `/download/${release.tag_name}`);
+              }
+              return url;
             };
 
             const getSig = async (regex) => {
