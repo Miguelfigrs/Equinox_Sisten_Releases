@@ -168,9 +168,128 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/equinox-release.keystore"
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Equinox Mobile (Equinox.MOBILE) — app Android separado do desktop.
+  # Pacote: br.com.equinox.mobile | frontend: npm | API: Equinox.MobileAPI.
+  # Roda depois do publish-android para não concorrer com ele no mesmo draft.
+  # ───────────────────────────────────────────────────────────────────────────
+  publish-mobile:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    needs: publish-android
+
+    env:
+      # Mesma versão de NDK fixada no Dockerfile.android do Equinox.MOBILE.
+      ANDROID_NDK_VERSION: 26.1.10909125
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Miguelfigrs/Equinox_System
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+          ref: ${{ github.event.client_payload.ref || 'master' }}
+
+      # A URL da API é embutida no bundle em tempo de build: sem ela o APK sai
+      # apontando para lugar nenhum. Falha cedo em vez de publicar um app quebrado.
+      - name: Check mobile API URL secret
+        run: |
+          if [ -z "${{ secrets.VITE_MOBILE_API_URL }}" ]; then
+            echo "::error::Secret VITE_MOBILE_API_URL não configurado (URL HTTPS pública da Equinox.MobileAPI, com /api no final)."
+            exit 1
+          fi
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          yes | sdkmanager --install "ndk;${ANDROID_NDK_VERSION}" "platforms;android-34" "build-tools;34.0.0"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # O Equinox.MOBILE usa npm (package-lock.json), não pnpm.
+      - name: Install frontend dependencies
+        working-directory: Equinox.MOBILE
+        run: npm ci
+
+      # src-tauri/gen é gitignorado — o projeto Android é gerado a cada build.
+      - name: Init Android project
+        working-directory: Equinox.MOBILE
+        run: npm run tauri:android:init
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | tr -d ' \n\r' | base64 --decode > $RUNNER_TEMP/equinox-release.keystore
+
+      - name: Build Android APK
+        working-directory: Equinox.MOBILE
+        env:
+          VITE_API_URL: ${{ secrets.VITE_MOBILE_API_URL }}
+        run: npm run tauri:android:build
+
+      - name: Sign APK
+        run: |
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks $RUNNER_TEMP/equinox-release.keystore \
+            --ks-key-alias equinox \
+            --ks-pass pass:${{ secrets.ANDROID_STORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+            --out equinox-mobile-release.apk \
+            Equinox.MOBILE/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+
+      - name: Verify APK signature
+        run: $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs equinox-mobile-release.apk
+
+      - name: Get release tag
+        id: get_tag
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: string
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 20
+            });
+            const release = releases.data
+              .filter(r => r.draft)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+            if (!release) throw new Error('Nenhum draft release encontrado para upload do APK mobile');
+            return release.tag_name;
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_tag.outputs.result }}
+          files: equinox-mobile-release.apk
+          draft: true
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/equinox-release.keystore"
+
   create-latest-json:
     runs-on: ubuntu-latest
-    needs: [publish-desktop, publish-android]
+    needs: [publish-desktop, publish-android, publish-mobile]
     permissions:
       contents: write
     steps:
