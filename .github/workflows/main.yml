@@ -5,6 +5,14 @@ name: Release
     types: [build-release]
   workflow_dispatch:
 
+env:
+  # NDK fixado (mesma versão do Dockerfile.android do Equinox.MOBILE).
+  # Não dá para confiar no ANDROID_NDK_HOME da imagem do runner: o contexto
+  # `env` do Actions só enxerga variáveis definidas no workflow, então
+  # `${{ env.ANDROID_NDK_HOME }}` sai vazio e o Tauri aborta com
+  # "Android NDK invalid".
+  ANDROID_NDK_VERSION: 26.1.10909125
+
 jobs:
   publish-desktop:
     permissions:
@@ -97,11 +105,16 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android targets
-        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+      - name: Install Android NDK
+        run: |
+          yes | sdkmanager --install "ndk;${ANDROID_NDK_VERSION}" "platforms;android-34" "build-tools;34.0.0"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -125,7 +138,6 @@ jobs:
         working-directory: Equinox.UI
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: pnpm tauri android build --apk
 
       - name: Sign APK
@@ -178,10 +190,6 @@ jobs:
       contents: write
     runs-on: ubuntu-22.04
     needs: publish-android
-
-    env:
-      # Mesma versão de NDK fixada no Dockerfile.android do Equinox.MOBILE.
-      ANDROID_NDK_VERSION: 26.1.10909125
 
     steps:
       - uses: actions/checkout@v4
