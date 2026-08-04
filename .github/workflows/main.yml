@@ -33,6 +33,17 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
+      # A chave do Google Maps é embutida no bundle em tempo de build. Sem ela o
+      # mapa das usinas degrada para o iframe da Embed API, que desenha um pino
+      # só — falha silenciosa. Melhor abortar do que publicar assim.
+      - name: Check Google Maps key                                    # ← NOVO
+        shell: bash                                                    # ← NOVO
+        run: |                                                         # ← NOVO
+          if [ -z "${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" ]; then    # ← NOVO
+            echo "::error::Secret VITE_GOOGLE_MAPS_API_KEY não configurado — o mapa das usinas sairia com um pino só."
+            exit 1                                                     # ← NOVO
+          fi                                                           # ← NOVO
+
       - uses: actions/checkout@v4
         with:
           repository: Miguelfigrs/Equinox_System
@@ -73,6 +84,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}   # ← NOVO
         with:
           projectPath: Equinox.UI
           tagName: v__VERSION__
@@ -90,6 +102,13 @@ jobs:
     needs: publish-desktop
 
     steps:
+      - name: Check Google Maps key                                    # ← NOVO
+        run: |                                                         # ← NOVO
+          if [ -z "${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" ]; then    # ← NOVO
+            echo "::error::Secret VITE_GOOGLE_MAPS_API_KEY não configurado — o mapa das usinas sairia com um pino só."
+            exit 1                                                     # ← NOVO
+          fi                                                           # ← NOVO
+
       - uses: actions/checkout@v4
         with:
           repository: Miguelfigrs/Equinox_System
@@ -138,6 +157,7 @@ jobs:
         working-directory: Equinox.UI
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}   # ← NOVO
         run: pnpm tauri android build --apk
 
       - name: Sign APK
@@ -241,6 +261,22 @@ jobs:
       - name: Init Android project
         working-directory: Equinox.MOBILE
         run: npm run tauri:android:init
+
+      # O `tauri android init` copia os recursos de src-tauri/icons/android para
+      # o projeto gerado, mas o fundo do ícone adaptativo vem branco do template.
+      # Reaplicamos a arte versionada (inclui as variantes -night) e forçamos o
+      # fundo transparente.
+      - name: Apply launcher icons                                     # ← NOVO
+        working-directory: Equinox.MOBILE                              # ← NOVO
+        run: |                                                         # ← NOVO
+          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+          mkdir -p src-tauri/gen/android/app/src/main/res/values
+          cat > src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <color name="ic_launcher_background">#00000000</color>
+          </resources>
+          XML
 
       - name: Decode keystore
         run: |
