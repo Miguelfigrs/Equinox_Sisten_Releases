@@ -54,7 +54,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -67,9 +67,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      # Workspace pnpm na raiz (Equinox.UI + Equinox.MOBILE + packages/shared-ts):
+      # o lockfile único é o pnpm-lock.yaml da raiz.
       - name: Install frontend dependencies
-        working-directory: Equinox.UI
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       # O secret TAURI_SIGNING_PRIVATE_KEY deve conter o texto puro da chave
       # minisign (começa com "untrusted comment: ..."), SEM base64.
@@ -117,8 +118,13 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # O pacote legado "tools" (padrão do action) não existe mais no repositório
+      # do Google e derruba o sdkmanager. NDK, platforms e build-tools são
+      # instalados no passo seguinte.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android NDK
         run: |
@@ -139,11 +145,10 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Install frontend dependencies
-        working-directory: Equinox.UI
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Decode keystore
         run: |
@@ -198,7 +203,7 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # Equinox Mobile (Equinox.MOBILE) — app Android separado do desktop.
-  # Pacote: br.com.equinox.mobile | frontend: npm | API: Equinox.MobileAPI.
+  # Pacote: br.com.equinox.mobile | frontend: workspace pnpm | API: Equinox.MobileAPI.
   # Roda depois do publish-android para não concorrer com ele no mesmo draft.
   # ───────────────────────────────────────────────────────────────────────────
   publish-mobile:
@@ -229,8 +234,11 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Ver comentário no publish-android: sem "tools" legado.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android NDK
         run: |
@@ -248,15 +256,20 @@ jobs:
         with:
           node-version: 20
 
-      # O Equinox.MOBILE usa npm (package-lock.json), não pnpm.
+      # O Equinox.MOBILE depende de @equinox/shared-ts via "workspace:*", que o
+      # npm não entende: a instalação é pelo workspace pnpm da raiz.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Install frontend dependencies
-        working-directory: Equinox.MOBILE
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # src-tauri/gen é gitignorado — o projeto Android é gerado a cada build.
       - name: Init Android project
         working-directory: Equinox.MOBILE
-        run: npm run tauri:android:init
+        run: pnpm run tauri:android:init
 
       # OBRIGATÓRIO: o `tauri android init` monta o projeto a partir do template
       # do Tauri, com os ícones PADRÃO DELE — não aproveita src-tauri/icons/android.
@@ -283,7 +296,7 @@ jobs:
         working-directory: Equinox.MOBILE
         env:
           VITE_API_URL: ${{ secrets.VITE_MOBILE_API_URL }}
-        run: npm run tauri:android:build
+        run: pnpm run tauri:android:build
 
       - name: Sign APK
         run: |
